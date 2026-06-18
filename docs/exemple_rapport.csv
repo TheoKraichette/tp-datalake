@@ -1,0 +1,2 @@
+pokemon_id,name,types,height,weight,stats
+143,snorlax,normal,21,4600,hp=160;attack=110;defense=65;special-attack=65;special-defense=110;speed=30

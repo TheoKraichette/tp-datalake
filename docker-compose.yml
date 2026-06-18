@@ -1,0 +1,100 @@
+name: tp-datalake-pokemon
+
+services:
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: tp-pokemon-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "${POSTGRES_HOST_PORT}:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+      - ./sql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [tp-datalake]
+
+  minio:
+    image: minio/minio:latest
+    container_name: tp-pokemon-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "${MINIO_API_PORT}:9000"
+      - "${MINIO_CONSOLE_PORT}:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [tp-datalake]
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: tp-pokemon-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD};
+      mc mb -p local/raw-pokemon;
+      mc mb -p local/pokemon-images;
+      mc mb -p local/reports;
+      mc anonymous set download local/pokemon-images;
+      mc ls local;
+      exit 0;
+      "
+    networks: [tp-datalake]
+
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: tp-pokemon-n8n
+    ports:
+      - "${N8N_HOST_PORT}:5678"
+    environment:
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      N8N_SECURE_COOKIE: "false"
+      N8N_RUNNERS_ENABLED: "true"
+      GENERIC_TIMEZONE: "Europe/Paris"
+      NODE_FUNCTION_ALLOW_BUILTIN: "crypto"
+      N8N_DIAGNOSTICS_ENABLED: "false"
+    volumes:
+      - n8n-data:/home/node/.n8n
+      - ./n8n:/import:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks: [tp-datalake]
+
+  adminer:
+    image: adminer:latest
+    container_name: tp-pokemon-adminer
+    ports:
+      - "${ADMINER_HOST_PORT}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [tp-datalake]
+
+networks:
+  tp-datalake:
+    driver: bridge
+
+volumes:
+  pg-data:
+  minio-data:
+  n8n-data:

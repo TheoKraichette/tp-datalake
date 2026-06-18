@@ -1,0 +1,181 @@
+{
+  "id": "tpdatalakepokemon01",
+  "name": "TP Data Lake - Ingestion Pokemon",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "node-trigger-0001",
+      "name": "Declencheur manuel",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-200, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT pokemon_id, name FROM pokemon ORDER BY random() LIMIT 1;",
+        "options": {}
+      },
+      "id": "node-pick-0002",
+      "name": "Choisir un pokemon",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [20, 300],
+      "credentials": { "postgres": { "id": "tppgcred0000000001", "name": "TP Postgres" } }
+    },
+    {
+      "parameters": {
+        "url": "=https://pokeapi.co/api/v2/pokemon/{{ $json.name }}",
+        "options": {}
+      },
+      "id": "node-http-0003",
+      "name": "Recuperer PokeAPI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "const crypto=require('crypto');const pick=$('Choisir un pokemon').item.json;const d=$json;const ts=$now.toFormat('yyyyLLdd-HHmmss');const raw=JSON.stringify(d,null,2);const types=(d.types||[]).map(t=>t.type.name).join('/');const stats=(d.stats||[]).map(s=>s.stat.name+'='+s.base_stat).join(';');const img=d.sprites&&d.sprites.other&&d.sprites.other['official-artwork']?d.sprites.other['official-artwork'].front_default:(d.sprites?d.sprites.front_default:'');const nl=String.fromCharCode(10);const csv=['pokemon_id,name,types,height,weight,stats',[pick.pokemon_id,pick.name,types,d.height,d.weight,stats].join(',')].join(nl)+nl;return {json:{pokemon_id:pick.pokemon_id,pokemon_name:pick.name,ts:ts,raw_content:raw,raw_name:pick.name+'-'+ts+'.json',raw_key:pick.pokemon_id+'/'+pick.name+'-'+ts+'.json',raw_size:Buffer.byteLength(raw,'utf8'),raw_md5:crypto.createHash('md5').update(raw).digest('hex'),image_url:img,image_name:pick.name+'-'+ts+'.png',image_key:pick.pokemon_id+'/'+pick.name+'-'+ts+'.png',report_content:csv,report_name:'rapport-'+pick.name+'-'+ts+'.csv',report_key:pick.pokemon_id+'/rapport-'+pick.name+'-'+ts+'.csv',report_size:Buffer.byteLength(csv,'utf8'),report_md5:crypto.createHash('md5').update(csv).digest('hex')}};"
+      },
+      "id": "node-code-0004",
+      "name": "Preparer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "upload",
+        "bucketName": "raw-pokemon",
+        "fileName": "={{ $('Preparer').item.json.raw_key }}",
+        "binaryData": false,
+        "fileContent": "={{ $('Preparer').item.json.raw_content }}",
+        "additionalFields": {}
+      },
+      "id": "node-s3raw-0005",
+      "name": "Uploader JSON",
+      "type": "n8n-nodes-base.s3",
+      "typeVersion": 1,
+      "position": [680, 300],
+      "credentials": { "s3": { "id": "tps3cred00000000001", "name": "TP MinIO" } }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO pokemon_files (pokemon_id, bucket_name, object_key, file_name, file_type, file_size, mime_type, internal_url, checksum_md5) VALUES ({{ $('Preparer').item.json.pokemon_id }}, 'raw-pokemon', '{{ $('Preparer').item.json.raw_key }}', '{{ $('Preparer').item.json.raw_name }}', 'json', {{ $('Preparer').item.json.raw_size }}, 'application/json', 'http://localhost:9100/raw-pokemon/{{ $('Preparer').item.json.raw_key }}', '{{ $('Preparer').item.json.raw_md5 }}') RETURNING file_id;",
+        "options": {}
+      },
+      "id": "node-catraw-0006",
+      "name": "Cataloguer JSON",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [900, 300],
+      "credentials": { "postgres": { "id": "tppgcred0000000001", "name": "TP Postgres" } }
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Preparer').item.json.image_url }}",
+        "options": { "response": { "response": { "responseFormat": "file", "outputPropertyName": "data" } } }
+      },
+      "id": "node-img-0007",
+      "name": "Telecharger image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "upload",
+        "bucketName": "pokemon-images",
+        "fileName": "={{ $('Preparer').item.json.image_key }}",
+        "binaryData": true,
+        "binaryPropertyName": "data",
+        "additionalFields": {}
+      },
+      "id": "node-s3img-0008",
+      "name": "Uploader image",
+      "type": "n8n-nodes-base.s3",
+      "typeVersion": 1,
+      "position": [1340, 300],
+      "credentials": { "s3": { "id": "tps3cred00000000001", "name": "TP MinIO" } }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO pokemon_files (pokemon_id, bucket_name, object_key, file_name, file_type, mime_type, internal_url) VALUES ({{ $('Preparer').item.json.pokemon_id }}, 'pokemon-images', '{{ $('Preparer').item.json.image_key }}', '{{ $('Preparer').item.json.image_name }}', 'png', 'image/png', 'http://localhost:9100/pokemon-images/{{ $('Preparer').item.json.image_key }}') RETURNING file_id;",
+        "options": {}
+      },
+      "id": "node-catimg-0009",
+      "name": "Cataloguer image",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [1560, 300],
+      "credentials": { "postgres": { "id": "tppgcred0000000001", "name": "TP Postgres" } }
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "upload",
+        "bucketName": "reports",
+        "fileName": "={{ $('Preparer').item.json.report_key }}",
+        "binaryData": false,
+        "fileContent": "={{ $('Preparer').item.json.report_content }}",
+        "additionalFields": {}
+      },
+      "id": "node-s3rep-0010",
+      "name": "Uploader rapport",
+      "type": "n8n-nodes-base.s3",
+      "typeVersion": 1,
+      "position": [1780, 300],
+      "credentials": { "s3": { "id": "tps3cred00000000001", "name": "TP MinIO" } }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO pokemon_files (pokemon_id, bucket_name, object_key, file_name, file_type, file_size, mime_type, internal_url, checksum_md5) VALUES ({{ $('Preparer').item.json.pokemon_id }}, 'reports', '{{ $('Preparer').item.json.report_key }}', '{{ $('Preparer').item.json.report_name }}', 'csv', {{ $('Preparer').item.json.report_size }}, 'text/csv', 'http://localhost:9100/reports/{{ $('Preparer').item.json.report_key }}', '{{ $('Preparer').item.json.report_md5 }}') RETURNING file_id;",
+        "options": {}
+      },
+      "id": "node-catrep-0011",
+      "name": "Cataloguer rapport",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [2000, 300],
+      "credentials": { "postgres": { "id": "tppgcred0000000001", "name": "TP Postgres" } }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO file_ingestion_log (file_name, bucket_name, object_key, source, status, message, file_id) VALUES ('{{ $('Preparer').item.json.raw_name }}', 'raw-pokemon', '{{ $('Preparer').item.json.raw_key }}', 'pokeapi', 'SUCCESS', 'JSON brut PokeAPI', {{ $('Cataloguer JSON').item.json.file_id }}), ('{{ $('Preparer').item.json.image_name }}', 'pokemon-images', '{{ $('Preparer').item.json.image_key }}', 'pokeapi', 'SUCCESS', 'Image officielle', {{ $('Cataloguer image').item.json.file_id }}), ('{{ $('Preparer').item.json.report_name }}', 'reports', '{{ $('Preparer').item.json.report_key }}', 'genere', 'SUCCESS', 'Rapport CSV', {{ $('Cataloguer rapport').item.json.file_id }}) RETURNING log_id;",
+        "options": {}
+      },
+      "id": "node-log-0012",
+      "name": "Journaliser",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [2220, 300],
+      "credentials": { "postgres": { "id": "tppgcred0000000001", "name": "TP Postgres" } }
+    }
+  ],
+  "connections": {
+    "Declencheur manuel": { "main": [[{ "node": "Choisir un pokemon", "type": "main", "index": 0 }]] },
+    "Choisir un pokemon": { "main": [[{ "node": "Recuperer PokeAPI", "type": "main", "index": 0 }]] },
+    "Recuperer PokeAPI": { "main": [[{ "node": "Preparer", "type": "main", "index": 0 }]] },
+    "Preparer": { "main": [[{ "node": "Uploader JSON", "type": "main", "index": 0 }]] },
+    "Uploader JSON": { "main": [[{ "node": "Cataloguer JSON", "type": "main", "index": 0 }]] },
+    "Cataloguer JSON": { "main": [[{ "node": "Telecharger image", "type": "main", "index": 0 }]] },
+    "Telecharger image": { "main": [[{ "node": "Uploader image", "type": "main", "index": 0 }]] },
+    "Uploader image": { "main": [[{ "node": "Cataloguer image", "type": "main", "index": 0 }]] },
+    "Cataloguer image": { "main": [[{ "node": "Uploader rapport", "type": "main", "index": 0 }]] },
+    "Uploader rapport": { "main": [[{ "node": "Cataloguer rapport", "type": "main", "index": 0 }]] },
+    "Cataloguer rapport": { "main": [[{ "node": "Journaliser", "type": "main", "index": 0 }]] }
+  }
+}
