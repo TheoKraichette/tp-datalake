@@ -12,16 +12,17 @@ Pokémon (DB) → PokéAPI → n8n → MinIO (raw-pokemon / pokemon-images / rep
 ## Démarrage
 
 ```bash
+cp .env.example .env          # renseigner les mots de passe avant le premier lancement
 docker compose up -d
 bash scripts/verifier.sh   # ré-affiche l'état (buckets + base)
 ```
 
 | Service       | URL                       | Identifiants                            |
 |---------------|---------------------------|-----------------------------------------|
-| Console MinIO | http://localhost:9101     | `minioadmin` / `minioadmin123`          |
-| n8n           | http://localhost:5678     | `tp@datalake.local` / `TpDataLake2026`  |
-| Adminer (DB)  | http://localhost:8089     | PostgreSQL · `postgres` · `datalake` / `datalake` · `pokemon_lake` |
-| PostgreSQL    | localhost:5434            | `datalake` / `datalake` (`pokemon_lake`) |
+| Console MinIO | http://localhost:9101     | `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` (voir `.env`)          |
+| n8n           | http://localhost:5678     | compte créé au premier lancement  |
+| Adminer (DB)  | http://localhost:8089     | PostgreSQL · `postgres` · identifiants du `.env` |
+| PostgreSQL    | localhost:5434            | `POSTGRES_USER` / `POSTGRES_PASSWORD` (voir `.env`) |
 
 Les ports sont décalés en 9100/9101/5434 car 9000/9001 étaient déjà pris par un autre MinIO.
 La console MinIO de ce TP est donc sur le **9101**.
