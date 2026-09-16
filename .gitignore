@@ -1,0 +1,11 @@
+# Secrets et configuration locale
+.env
+.env.local
+
+# Données et volumes
+data/
+volumes/
+
+# Système
+.DS_Store
+Thumbs.db
